@@ -49,7 +49,8 @@ const RIGHT = 'RIGHT';
 class Santa {
     MODES = {
         STAND: 'STAND',
-        WALK: 'WALK'
+        WALK: 'WALK',
+        JUMP: 'JUMP',
     }
 
     SPRITE_COORDS = {
@@ -70,6 +71,13 @@ class Santa {
             [265, 115, 34, 53],
             [301, 115, 36, 53],
             [337, 115, 34, 53],
+        ]),
+        [this.MODES.JUMP]: expandFrames( [
+            [0, 181, 42, 56, 3],
+            [43, 180, 46, 46, 3],
+            [91, 180, 40, 43, 3],
+            [132, 180, 38, 49, 3],
+            [171, 183, 38, 53, 3],
         ])
     }
 
@@ -130,17 +138,21 @@ class Santa {
             this.direction = LEFT;
         }
 
+        if(this.pressedKeys.up) {
+            this.mode = this.MODES.JUMP;
+        }
+
         if(this.animationFrame >= this.SPRITE_COORDS[this.mode].length) {
             this.animationFrame = 0;
         }
 
-        if(this.mode === this.MODES.WALK) {
+        if(this.mode === this.MODES.WALK || this.mode === this.MODES.JUMP) {
             if(this.direction === RIGHT) {
                 this.posX += progress / 10;
             }
         }
 
-        if(this.mode === this.MODES.WALK) {
+        if(this.mode === this.MODES.WALK || this.moder === this.MODES.JUMP) {
             if(this.direction === LEFT) {
                 this.posX -= progress / 10;
             }
