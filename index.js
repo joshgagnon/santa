@@ -1,5 +1,26 @@
 const spriteUrl = './sprites.png';
 
+class Vector {
+    x=0;
+    y=0;
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+    }
+    add(v) {
+        this.x += v.x;
+        this.y += v.y;
+    }
+    clamp(x, y) {
+        this.x = Math.max(0, this.x)
+        this.y = Math.max(0, this.y)
+        this.x = Math.min(x, this.x)
+        this.y = Math.min(y, this.y)
+    }
+}
+
+const GRAVITY = new Vector(0, 2.5);
+
 async function loadImage(url) {
     let response = await fetch(url);
     let blob = await response.blob();
@@ -15,7 +36,7 @@ async function prepSprites() {
 
 function createCanvas() {
     const canvas = document.createElement("canvas");
-    canvas.style.imageRendering = 'crisp-edges';
+    canvas.style.imageRendering = 'pixelated';
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     window.document.body.appendChild(canvas);
@@ -80,21 +101,24 @@ class Santa {
             [171, 183, 38, 53, 3],
         ])
     }
-
-    posX=0;
-    posY=100;
-    mode=this.MODES.STAND;
-    direction=RIGHT;
-    frame=0;
-    animationFrame=0;
+    width = 0;
+    height = 0;
+    mode = this.MODES.STAND;
+    isJumping = false;
+    isFalling = false;
+    direction = RIGHT;
+    frame = 0;
+    animationFrame = 0;
     pressedKeys = {};
-
+    speed = 0.25;
+    pos = new Vector(0, 0);
+    movement = new Vector(0, 0);
 
     constructor({spriteSheet, width, height}) {
         this.spriteSheet = spriteSheet;
         this.width = width;
         this.height = height;
-        this.posY = height;
+        this.pos.y = height;
         this.listeners();
     }
 
@@ -115,7 +139,8 @@ class Santa {
         window.addEventListener("keyup", this.keyup, false)
     }
 
-    step = (progress) => {
+    step = (ms) => {
+        const inputMovement = new Vector(0, 0);
         this.frame++;
         if(this.frame % 10 ===0) {
             this.animationFrame++;
@@ -138,8 +163,9 @@ class Santa {
             this.direction = LEFT;
         }
 
-        if(this.pressedKeys.up) {
+        if(this.pressedKeys.up && this.mode != this.MODES.JUMP) {
             this.mode = this.MODES.JUMP;
+            inputMovement.y -= 10;
         }
 
         if(this.animationFrame >= this.SPRITE_COORDS[this.mode].length) {
@@ -148,15 +174,22 @@ class Santa {
 
         if(this.mode === this.MODES.WALK || this.mode === this.MODES.JUMP) {
             if(this.direction === RIGHT) {
-                this.posX += progress / 10;
+                inputMovement.x = ms * this.speed;
             }
         }
 
         if(this.mode === this.MODES.WALK || this.moder === this.MODES.JUMP) {
             if(this.direction === LEFT) {
-                this.posX -= progress / 10;
+                inputMovement.x = -(ms * this.speed);
             }
         }
+        this.movement.x = 0;
+        this.movement.add(inputMovement);
+
+       this.movement.add(GRAVITY);
+
+        this.pos.add(this.movement);
+        this.pos.clamp(this.width, this.height);
     }
     draw = (ctx) => {
         const frame = this.SPRITE_COORDS[this.mode][this.animationFrame];
@@ -168,8 +201,8 @@ class Santa {
                 frame[1],
                 frame[2],
                 frame[3],
-                -this.posX - frame[2],
-                this.posY - frame[3],
+                -this.pos.x - frame[2],
+                this.pos.y - frame[3],
                 frame[2],
                 frame[3]
             );
@@ -180,8 +213,8 @@ class Santa {
                 frame[1],
                 frame[2],
                 frame[3],
-                this.posX,
-                this.posY - frame[3],
+                this.pos.x,
+                this.pos.y - frame[3],
                 frame[2],
                 frame[3]
             );
@@ -208,10 +241,10 @@ class Game {
         this.characters.map(c => c.step(progress))
     }
     loop = (timestamp) => {
-        const progress = timestamp - lastRender
+        const progress = timestamp - this.lastRender
         this.update(progress);
         this.render()
-        lastRender = timestamp
+        this.lastRender = timestamp
         window.requestAnimationFrame(this.loop)
     }
     play = () => {
