@@ -19,7 +19,7 @@ class Vector {
     }
 }
 
-const GRAVITY = new Vector(0, 2.5);
+const GRAVITY = new Vector(0, 0.3);
 
 async function loadImage(url) {
     let response = await fetch(url);
@@ -66,12 +66,13 @@ const KEY_MAP = {
 
 const LEFT = 'LEFT';
 const RIGHT = 'RIGHT';
-
+const FALL_TIMEOUT = 3000;
 class Santa {
     MODES = {
         STAND: 'STAND',
         WALK: 'WALK',
         JUMP: 'JUMP',
+        FALL: 'FALL'
     }
 
     SPRITE_COORDS = {
@@ -94,18 +95,22 @@ class Santa {
             [337, 115, 34, 53],
         ]),
         [this.MODES.JUMP]: expandFrames( [
-            [0, 181, 42, 56, 3],
-            [43, 180, 46, 46, 3],
-            [91, 180, 40, 43, 3],
-            [132, 180, 38, 49, 3],
-            [171, 183, 38, 53, 3],
+            [0, 181, 42, 56, 4],
+            [43, 180, 46, 46, 4],
+            [91, 180, 40, 43, 4],
+            [132, 180, 38, 49, 4],
+            [171, 183, 38, 53, 4],
+        ]),
+        [this.MODES.FALL]: expandFrames( [
+            [0, 326, 59, 53]
         ])
+
     }
     width = 0;
     height = 0;
     mode = this.MODES.STAND;
-    isJumping = false;
-    isFalling = false;
+    fallStart = null;
+    jumpPressed = false;
     direction = RIGHT;
     frame = 0;
     animationFrame = 0;
@@ -130,6 +135,9 @@ class Santa {
     }
     keyup = (event) => {
         const code = KEY_MAP[event.keyCode];
+        if(code === 'up' && this.pressedKeys[code]) {
+            this.jumpPressed = true;
+        }
         if(code) {
             this.pressedKeys[code] = false;
         }
@@ -139,57 +147,71 @@ class Santa {
         window.addEventListener("keyup", this.keyup, false)
     }
 
-    step = (ms) => {
+    onGround = () => {
+        return this.pos.y >= this.height;
+    }
+    step = (ms, timestamp) => {
         const inputMovement = new Vector(0, 0);
         this.frame++;
-        if(this.frame % 10 ===0) {
+        if(this.frame % 10 === 0) {
             this.animationFrame++;
         }
-        if(this.mode !== this.MODES.STAND && !Object.values(this.pressedKeys).some(x=>x)) {
-            this.animationFrame = 0;
-            this.mode = this.MODES.STAND;
-        }
-        if(this.mode === this.MODES.STAND && (this.pressedKeys.right || this.pressedKeys.left)) {
-            this.animationFrame = 0;
-        }
 
+        if(this.pressedKeys.up && this.onGround()) {
+            inputMovement.y -= 10;
+        }
+        else if(this.pressedKeys.up && this.jumpPressed && !this.hasDoubleJumped) {
+            this.hasDoubleJumped = true;
+            this.movement.y = 0; // like hitting ground
+            inputMovement.y -= 10;
+        }
         if(this.pressedKeys.right) {
-            this.mode = this.MODES.WALK;
-            this.direction = RIGHT
+            inputMovement.x = ms * this.speed;
+            this.direction = RIGHT;
         }
-
         if(this.pressedKeys.left) {
-            this.mode = this.MODES.WALK;
+            inputMovement.x = -(ms * this.speed);
             this.direction = LEFT;
         }
 
-        if(this.pressedKeys.up && this.mode != this.MODES.JUMP) {
-            this.mode = this.MODES.JUMP;
-            inputMovement.y -= 10;
-        }
 
-        if(this.animationFrame >= this.SPRITE_COORDS[this.mode].length) {
-            this.animationFrame = 0;
-        }
-
-        if(this.mode === this.MODES.WALK || this.mode === this.MODES.JUMP) {
-            if(this.direction === RIGHT) {
-                inputMovement.x = ms * this.speed;
-            }
-        }
-
-        if(this.mode === this.MODES.WALK || this.moder === this.MODES.JUMP) {
-            if(this.direction === LEFT) {
-                inputMovement.x = -(ms * this.speed);
-            }
-        }
         this.movement.x = 0;
         this.movement.add(inputMovement);
 
-       this.movement.add(GRAVITY);
-
+        const onGround = this.onGround()
+        if(!onGround) {
+            this.movement.add(GRAVITY);
+        }
+        if(onGround) {
+            this.hasDoubleJumped = false;
+            this.jumpPressed = false;
+            this.fallStart = false;
+        }
+        if(onGround && this.movement.y > 0) {
+            this.movement.y = 0;
+        }
+        this.mode = this.MODES.STAND;
+        if(this.movement.x < 0 || this.movement.x > 0) {
+            this.mode = this.MODES.WALK;
+        }
+        if(this.movement.y > 0) {
+            this.mode = this.MODES.JUMP;
+            if(!this.fallStart) {
+                this.fallStart = timestamp;
+            }
+            else if((timestamp - this.fallStart) > FALL_TIMEOUT) {
+                this.mode = this.MODES.FALL;
+            }
+        }
+        if(this.movement.y < 0) {
+            this.mode = this.MODES.JUMP;
+        }
         this.pos.add(this.movement);
+
         this.pos.clamp(this.width, this.height);
+        if(this.animationFrame >= this.SPRITE_COORDS[this.mode].length) {
+            this.animationFrame = 0;
+        }
     }
     draw = (ctx) => {
         const frame = this.SPRITE_COORDS[this.mode][this.animationFrame];
@@ -237,18 +259,27 @@ class Game {
         this.ctx.clearRect(0, 0, this.width, this.height)
         this.characters.map(c => c.draw(this.ctx));
     }
-    update = (progress) => {
-        this.characters.map(c => c.step(progress))
+    update = (progress, timestamp) => {
+        this.characters.map(c => c.step(progress, timestamp))
     }
     loop = (timestamp) => {
         const progress = timestamp - this.lastRender
-        this.update(progress);
+        this.update(progress, timestamp);
         this.render()
         this.lastRender = timestamp
         window.requestAnimationFrame(this.loop)
     }
+    resize = () => {
+        this.width = window.innerWidth;
+        this.height = window.innerHeight;
+        this.characters.map(c => {
+            c.width = this.width;
+            c.height = this.height;
+        })
+    }
     play = () => {
         window.requestAnimationFrame(this.loop);
+        window.addEventListener("resize", this.resize, false)
     }
 }
 
